@@ -1,0 +1,25 @@
+apiVersion: v2
+name: fraud-detection
+description: A Helm chart for Fraud Detection MLOps service
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - fraud-detection
+  - machine-learning
+  - mlops
+  - fastapi
+  - kubernetes
+
+maintainers:
+  - name: Your Name
+    email: your.email@example.com
+
+sources:
+  - https://github.com/yourusername/fraud-detection-mlops
+
+dependencies: []
+
+annotations:
+  category: MachineLearning
