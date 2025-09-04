@@ -54,24 +54,31 @@ def train_fraud_model(
     # Feature engineering
     df_processed = data_processor.feature_engineering(df_clean)
     
-    # Prepare features
-    X, y = data_processor.prepare_features(df_processed)
+    # Prepare features (use 'Class' as target for credit card dataset)
+    X, y = data_processor.prepare_features(df_processed, target_column='Class')
     
     # Train model
     results = fraud_detector.train(X, y, test_size=test_size)
     
-    # Save model and results
+    # Save model, data processor and results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_filename = f"fraud_detector_{model_type}_{timestamp}.pkl"
+    processor_filename = f"data_processor_{model_type}_{timestamp}.pkl"
     results_filename = f"training_results_{model_type}_{timestamp}.json"
     
     os.makedirs(output_dir, exist_ok=True)
     
     model_path = os.path.join(output_dir, model_filename)
+    processor_path = os.path.join(output_dir, processor_filename)
     results_path = os.path.join(output_dir, results_filename)
     
     # Save model
     fraud_detector.save_model(model_path)
+    
+    # Save data processor
+    import pickle
+    with open(processor_path, 'wb') as f:
+        pickle.dump(data_processor, f)
     
     # Save training results
     with open(results_path, 'w') as f:

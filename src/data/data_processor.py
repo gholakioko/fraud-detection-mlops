@@ -76,22 +76,49 @@ class FraudDataProcessor:
         """
         logger.info("Starting feature engineering...")
         
-        # Add time-based features if timestamp exists
-        if 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df['hour'] = df['timestamp'].dt.hour
-            df['day_of_week'] = df['timestamp'].dt.dayofweek
-            df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
+        # Handle credit card dataset specifics
+        if 'Time' in df.columns:
+            # Convert time from seconds to hours and extract time-based features
+            df['Time_hours'] = df['Time'] / 3600
+            df['Time_hour_of_day'] = (df['Time'] / 3600) % 24
+            df['Time_day'] = (df['Time'] / 3600 / 24).astype(int)
+            
+            # Create cyclical features for hour of day
+            df['hour_sin'] = np.sin(2 * np.pi * df['Time_hour_of_day'] / 24)
+            df['hour_cos'] = np.cos(2 * np.pi * df['Time_hour_of_day'] / 24)
         
-        # Add transaction amount ratios if applicable
-        if 'amount' in df.columns:
-            df['log_amount'] = np.log1p(df['amount'])
-            df['amount_z_score'] = (df['amount'] - df['amount'].mean()) / df['amount'].std()
+        # Add transaction amount features if applicable
+        if 'Amount' in df.columns:
+            # Log transform for amount (add 1 to handle 0 values)
+            df['log_amount'] = np.log1p(df['Amount'])
+            
+            # Amount categories
+            df['amount_cat'] = pd.cut(df['Amount'], 
+                                    bins=[0, 10, 50, 200, 1000, float('inf')],
+                                    labels=['very_small', 'small', 'medium', 'large', 'very_large'])
+            
+            # Amount statistics
+            df['amount_z_score'] = (df['Amount'] - df['Amount'].mean()) / df['Amount'].std()
+            df['is_small_amount'] = (df['Amount'] <= 10).astype(int)
+            df['is_large_amount'] = (df['Amount'] >= 1000).astype(int)
+        
+        # Interaction features with V1-V28 (most important PCA components)
+        if all(f'V{i}' in df.columns for i in range(1, 29)):
+            # Sum of absolute values of V components
+            v_cols = [f'V{i}' for i in range(1, 29)]
+            df['V_sum_abs'] = df[v_cols].abs().sum(axis=1)
+            df['V_mean_abs'] = df[v_cols].abs().mean(axis=1)
+            df['V_std'] = df[v_cols].std(axis=1)
+            
+            # Create interaction features with amount and key V components
+            if 'Amount' in df.columns:
+                for v_col in ['V1', 'V2', 'V3', 'V4']:  # Most predictive V components typically
+                    df[f'{v_col}_amount_ratio'] = df[v_col] / (df['Amount'] + 1)
         
         logger.info("Feature engineering completed")
         return df
     
-    def prepare_features(self, df: pd.DataFrame, target_column: str = 'is_fraud') -> Tuple[np.ndarray, np.ndarray]:
+    def prepare_features(self, df: pd.DataFrame, target_column: str = 'Class') -> Tuple[np.ndarray, np.ndarray]:
         """
         Prepare features for model training.
         
@@ -111,10 +138,21 @@ class FraudDataProcessor:
         # Store feature columns
         self.feature_columns = X.columns.tolist()
         
-        # Encode categorical variables
-        categorical_columns = X.select_dtypes(include=['object']).columns
+        # Encode categorical variables (including category dtype from pd.cut)
+        categorical_columns = X.select_dtypes(include=['object', 'category']).columns
         for col in categorical_columns:
+            if X[col].dtype == 'category':
+                # For categorical columns from pd.cut, convert to string first
+                X[col] = X[col].astype(str)
             X[col] = self.label_encoder.fit_transform(X[col])
+        
+        # Ensure all columns are numeric
+        X = X.apply(pd.to_numeric, errors='coerce')
+        
+        # Check for any NaN values after conversion
+        if X.isnull().any().any():
+            logger.warning("Found NaN values after numeric conversion, filling with 0")
+            X = X.fillna(0)
         
         # Scale numerical features
         X_scaled = self.scaler.fit_transform(X)

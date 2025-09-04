@@ -9,7 +9,7 @@ help: ## Show this help message
 # Setup
 setup: ## Initial project setup
 	@echo "Setting up fraud detection MLOps project..."
-	python -m venv venv
+	python3 -m venv venv
 	@echo "Virtual environment created. Activate with: source venv/bin/activate"
 
 install: ## Install dependencies
@@ -27,16 +27,46 @@ sample-data: ## Generate sample fraud detection data
 	@echo "Generating sample data..."
 	python -c "from src.utils.helpers import generate_sample_data; df = generate_sample_data(5000, 0.1); df.to_csv('data/raw/sample_fraud_data.csv', index=False); print('Sample data saved to data/raw/sample_fraud_data.csv')"
 
-# Model Training
-train: ## Train fraud detection model
-	@echo "Training fraud detection model..."
-	python src/training/train_model.py --data-path data/raw/sample_fraud_data.csv --model-type random_forest --output-dir models/trained
+check-data: ## Check if credit card data exists
+	@if [ -f "data/raw/creditcard.csv" ]; then \
+		echo "✅ Credit card dataset found: $(shell wc -l < data/raw/creditcard.csv) records"; \
+	else \
+		echo "❌ Credit card dataset not found at data/raw/creditcard.csv"; \
+	fi
 
-train-all: ## Train all model types
+# Model Training
+train: ## Train fraud detection model with credit card data
+	@echo "Training fraud detection model..."
+	@if [ -f "data/raw/creditcard.csv" ]; then \
+		python src/training/train_model.py --data-path data/raw/creditcard.csv --model-type random_forest --output-dir models/trained; \
+	else \
+		echo "❌ Credit card data not found. Using sample data..."; \
+		python src/training/train_model.py --data-path data/raw/sample_fraud_data.csv --model-type random_forest --output-dir models/trained; \
+	fi
+
+train-credit-card: ## Train specifically with credit card dataset
+	@echo "Training with credit card dataset..."
+	@if [ -f "data/raw/creditcard.csv" ]; then \
+		python src/training/train_model.py --data-path data/raw/creditcard.csv --model-type random_forest --output-dir models/trained --test-size 0.3; \
+	else \
+		echo "❌ Credit card dataset not found at data/raw/creditcard.csv"; \
+		exit 1; \
+	fi
+
+train-all: ## Train all model types with available data
 	@echo "Training all model types..."
+	@DATA_PATH="data/raw/creditcard.csv"; \
+	if [ ! -f "$$DATA_PATH" ]; then \
+		echo "Using sample data instead..."; \
+		DATA_PATH="data/raw/sample_fraud_data.csv"; \
+	fi; \
+	python src/training/train_model.py --data-path $$DATA_PATH --model-type random_forest --output-dir models/trained; \
+	python src/training/train_model.py --data-path $$DATA_PATH --model-type logistic_regression --output-dir models/trained; \
+	python src/training/train_model.py --data-path $$DATA_PATH --model-type isolation_forest --output-dir models/trained
+
+train-sample: ## Train with sample data
+	@echo "Training with sample data..."
 	python src/training/train_model.py --data-path data/raw/sample_fraud_data.csv --model-type random_forest --output-dir models/trained
-	python src/training/train_model.py --data-path data/raw/sample_fraud_data.csv --model-type logistic_regression --output-dir models/trained
-	python src/training/train_model.py --data-path data/raw/sample_fraud_data.csv --model-type isolation_forest --output-dir models/trained
 
 # Serving
 serve: ## Start the fraud detection API server
@@ -153,6 +183,9 @@ setup-project: setup install sample-data ## Complete project setup
 
 quick-start: install sample-data train serve ## Quick start - install, generate data, train, and serve
 	@echo "🚀 Quick start complete! API should be running at http://localhost:8000"
+
+quick-start-cc: install check-data train-credit-card serve ## Quick start with credit card dataset
+	@echo "🚀 Credit card fraud detection system ready at http://localhost:8000"
 
 # CI/CD
 ci-test: install test lint ## Run CI tests

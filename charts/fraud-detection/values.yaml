@@ -4,7 +4,7 @@
 replicaCount: 3
 
 image:
-  repository: ghcr.io/yourusername/fraud-detection
+  repository: ghcr.io/gholakioko/fraud-detection
   pullPolicy: IfNotPresent
   tag: "latest"
 

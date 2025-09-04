@@ -38,13 +38,36 @@ data_processor = None
 
 class TransactionData(BaseModel):
     """Transaction data model for predictions."""
-    amount: float
-    merchant_category: str = "online"
-    hour: int = 12
-    day_of_week: int = 1
-    is_weekend: int = 0
-    customer_age: int = 35
-    transaction_type: str = "purchase"
+    Time: float = 0.0
+    V1: float = 0.0
+    V2: float = 0.0
+    V3: float = 0.0
+    V4: float = 0.0
+    V5: float = 0.0
+    V6: float = 0.0
+    V7: float = 0.0
+    V8: float = 0.0
+    V9: float = 0.0
+    V10: float = 0.0
+    V11: float = 0.0
+    V12: float = 0.0
+    V13: float = 0.0
+    V14: float = 0.0
+    V15: float = 0.0
+    V16: float = 0.0
+    V17: float = 0.0
+    V18: float = 0.0
+    V19: float = 0.0
+    V20: float = 0.0
+    V21: float = 0.0
+    V22: float = 0.0
+    V23: float = 0.0
+    V24: float = 0.0
+    V25: float = 0.0
+    V26: float = 0.0
+    V27: float = 0.0
+    V28: float = 0.0
+    Amount: float = 0.0
     
 
 class PredictionResponse(BaseModel):
@@ -66,22 +89,37 @@ async def startup_event():
     
     logger.info("Starting Fraud Detection API...")
     
-    # Initialize components
-    fraud_detector = FraudDetector()
-    data_processor = FraudDataProcessor()
-    
     # Load trained model (you can set this via environment variable)
     model_path = os.getenv("MODEL_PATH", "models/trained/fraud_detector_random_forest_latest.pkl")
+    processor_path = os.getenv("PROCESSOR_PATH", model_path.replace("fraud_detector", "data_processor"))
     
+    # Initialize fraud detector
+    fraud_detector = FraudDetector()
+    
+    # Load model
     if os.path.exists(model_path):
         try:
             fraud_detector.load_model(model_path)
             logger.info(f"Model loaded successfully from {model_path}")
         except Exception as e:
             logger.error(f"Failed to load model: {str(e)}")
-            # Continue without model for health checks
     else:
         logger.warning(f"Model file not found at {model_path}")
+    
+    # Load data processor
+    if os.path.exists(processor_path):
+        try:
+            import pickle
+            with open(processor_path, 'rb') as f:
+                data_processor = pickle.load(f)
+            logger.info(f"Data processor loaded successfully from {processor_path}")
+        except Exception as e:
+            logger.error(f"Failed to load data processor: {str(e)}")
+            # Fallback to new processor
+            data_processor = FraudDataProcessor()
+    else:
+        logger.warning(f"Data processor file not found at {processor_path}. Using new processor.")
+        data_processor = FraudDataProcessor()
 
 
 @app.get("/")
@@ -125,22 +163,30 @@ async def predict_fraud(transaction: TransactionData):
         transaction_dict = transaction.dict()
         df = pd.DataFrame([transaction_dict])
         
-        # Process data (basic preprocessing for serving)
-        # Note: In production, you'd want more sophisticated preprocessing
-        categorical_cols = ['merchant_category', 'transaction_type']
-        for col in categorical_cols:
-            if col in df.columns:
-                # Simple label encoding for demo (in production, use fitted encoders)
-                unique_values = df[col].unique()
-                df[col] = pd.Categorical(df[col]).codes
+        # Apply the same feature engineering as during training
+        df_processed = data_processor.feature_engineering(df)
+        
+        # Handle categorical features if they exist (from pd.cut in feature engineering)
+        categorical_columns = df_processed.select_dtypes(include=['object', 'category']).columns
+        for col in categorical_columns:
+            if df_processed[col].dtype == 'category':
+                df_processed[col] = df_processed[col].astype(str)
+            # Use the same encoder as during training (simple approach)
+            df_processed[col] = pd.Categorical(df_processed[col], 
+                                             categories=['very_small', 'small', 'medium', 'large', 'very_large']).codes
+        
+        # Convert to numeric and handle any NaNs
+        df_processed = df_processed.apply(pd.to_numeric, errors='coerce').fillna(0)
+        
+        # Use the saved scaler from the data processor
+        X_scaled = data_processor.scaler.transform(df_processed)
         
         # Make prediction
-        X = df.values
-        prediction = fraud_detector.predict(X)[0]
+        prediction = fraud_detector.predict(X_scaled)[0]
         
         # Get probability if available
         if hasattr(fraud_detector.model, 'predict_proba'):
-            probabilities = fraud_detector.predict_proba(X)[0]
+            probabilities = fraud_detector.predict_proba(X_scaled)[0]
             fraud_prob = float(probabilities[1])
         else:
             fraud_prob = float(prediction)
