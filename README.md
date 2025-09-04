@@ -82,7 +82,7 @@ graph TB
 
 ### 1. Clone and Setup
 ```bash
-git clone https://github.com/yourusername/fraud-detection-mlops.git
+git clone https://github.com/gholakioko/fraud-detection-mlops.git
 cd fraud-detection-mlops
 
 # Create virtual environment
